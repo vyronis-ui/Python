@@ -27,7 +27,7 @@ except Exception as e:
 
 
 # ----------------------------------------------------
-# SIDEBAR: STORE LISTING
+# SIDEBAR: STORE LISTING ONLY
 # ----------------------------------------------------
 with st.sidebar:
     st.header("🏪 Tracked Store Listing")
@@ -56,11 +56,8 @@ def fetch_card_variants(url):
             
             if variants:
                 available_variants = []
-                
                 for variant in variants:
                     is_available = variant.get("available", False)
-                    
-                    # Only collect variants that are actively available
                     if is_available:
                         title = variant.get("title", "").strip()
                         price_raw = variant.get("price", 0)
@@ -71,11 +68,8 @@ def fetch_card_variants(url):
                             "Price": price,
                             "Availability": "Available"
                         })
-                
                 return available_variants
-                
             else:
-                # Fallback if the store layout doesn't use standard multi-variant tracking lists
                 available = data.get("available", False)
                 if available:
                     price_raw = data.get("price", 0)
@@ -84,10 +78,8 @@ def fetch_card_variants(url):
                         "Price": f"${price_raw / 100:.2f}",
                         "Availability": "Available"
                     }]
-                
     except Exception:
         pass
-    
     return []
 
 # ----------------------------------------------------
@@ -108,7 +100,7 @@ selected_card = st.selectbox(
     placeholder="Type to search..."
 )
 
-# NEW FILTER: Multi-select filter for limiting store selection (All selected by default)
+# Multi-select filter for limiting store selection (All selected by default)
 selected_stores = st.multiselect(
     "Filter by Stores:",
     options=unique_stores,
@@ -129,7 +121,6 @@ if st.button("Search", type="primary") and selected_card:
         ]
         
         results = []
-        
         progress_bar = st.progress(0)
         total_rows = len(matching_rows)
         
@@ -150,7 +141,6 @@ if st.button("Search", type="primary") and selected_card:
                             "Availability": v["Availability"],
                             "URL": url
                         })
-                
                 progress_bar.progress((idx + 1) / total_rows)
         
         progress_bar.empty()
@@ -158,34 +148,53 @@ if st.button("Search", type="primary") and selected_card:
         # Only render table if we found items that are actively in stock
         if results:
             table_html = """
-            <table style="width:100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px;">
+            <style>
+                :root {
+                    --bg-color: #ffffff;
+                    --text-color: #31333F;
+                    --header-bg: #f0f2f6;
+                    --border-color: #eeeeee;
+                    --link-color: #ff4b4b;
+                }
+                @media (prefers-color-scheme: dark) {
+                    :root {
+                        --bg-color: #0e1117;
+                        --text-color: #fafafa;
+                        --header-bg: #1d2430;
+                        --border-color: #31333f;
+                        --link-color: #ff6c6c;
+                    }
+                }
+                body { background-color: var(--bg-color); margin: 0; padding: 0; }
+                table { width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; background-color: var(--bg-color); }
+                th { padding: 12px 10px; border-bottom: 2px solid var(--border-color); background-color: var(--header-bg); color: var(--text-color); text-align: left; }
+                td { padding: 10px; border-bottom: 1px solid var(--border-color); color: var(--text-color); }
+                a { color: var(--link-color); text-decoration: none; font-weight: 500; }
+                a:hover { text-decoration: underline; }
+                .avail-green { color: #28a745; font-weight: bold; }
+            </style>
+            <table>
                 <thead>
-                    <tr style="background-color: #f0f2f6; text-align: left;">
-                        <th style="padding: 12px 10px; border-bottom: 2px solid #ddd; color: #31333F;">Store Name</th>
-                        <th style="padding: 12px 10px; border-bottom: 2px solid #ddd; color: #31333F;">Product Title</th>
-                        <th style="padding: 12px 10px; border-bottom: 2px solid #ddd; color: #31333F;">Condition</th>
-                        <th style="padding: 12px 10px; border-bottom: 2px solid #ddd; color: #31333F;">Price</th>
-                        <th style="padding: 12px 10px; border-bottom: 2px solid #ddd; color: #31333F;">Availability</th>
+                    <tr>
+                        <th>Store Name</th>
+                        <th>Product Title</th>
+                        <th>Condition</th>
+                        <th>Price</th>
+                        <th>Availability</th>
                     </tr>
                 </thead>
                 <tbody>
             """
-            
             for item in results:
-                avail_style = "color: #28a745; font-weight: bold;"
-                    
                 table_html += f"""
                     <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #31333F;">{item['Store Name']}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee;">
-                            <a href="{item['URL']}" target="_blank" style="color: #ff4b4b; text-decoration: none; font-weight: 500;">{item['Product']}</a>
-                        </td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #31333F; font-weight: 500;">{item['Condition']}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #31333F;">{item['Price']}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #eee; {avail_style}">{item['Availability']}</td>
+                        <td>{item['Store Name']}</td>
+                        <td><a href="{item['URL']}" target="_blank">{item['Product']}</a></td>
+                        <td style="font-weight: 500;">{item['Condition']}</td>
+                        <td>{item['Price']}</td>
+                        <td><span class="avail-green">{item['Availability']}</span></td>
                     </tr>
                 """
-                
             table_html += "</tbody></table>"
             
             calculated_height = max(180, (len(results) * 42) + 60)
