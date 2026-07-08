@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import json
 import os
-import urllib.parse  # Added to safely encode HTML for st.iframe
+import urllib.parse
 
 # Set up page configuration
 st.set_page_config(page_title="Flesh and Blood Singles Finder", layout="wide")
@@ -97,29 +97,81 @@ def fetch_card_variants(url):
 # MAIN APP UI LAYOUT
 # ----------------------------------------------------
 st.title("🃏 Flesh and Blood Singles Finder")
-st.write("Type a card name below, filter your target stores, and search live prices.")
+st.write("Type a card name to filter options, select your card, and search live prices.")
 
-# Dropdown selection logic driven entirely by the unique printings dataset
-selected_card_name = st.selectbox(
-    "Search for a card name:",
-    options=unique_card_names,
-    index=None,
-    placeholder="Type to search..."
-)
+# Initialize session state variables if they don't exist yet
+if "search_term_value" not in st.session_state:
+    st.session_state.search_term_value = ""
 
-# Multi-select filter for limiting store selection
-selected_stores = st.multiselect(
-    "Filter by Stores:",
-    options=unique_stores,
-    default=unique_stores,
-    placeholder="Select stores to include..."
-)
+if "search_history" not in st.session_state:
+    st.session_state.search_history = []
 
-if st.button("Search", type="primary") and selected_card_name:
-    if not selected_stores:
+# Callback function to handle the clear button click
+def clear_search():
+    st.session_state.search_term_value = ""
+
+# Callback function to load a card from recent history
+def load_historical_card(card_name):
+    st.session_state.search_term_value = card_name
+
+# Create two columns with vertical alignment fixed at the bottom row boundary
+col1, col2 = st.columns([5, 1], vertical_alignment="bottom")
+
+with col1:
+    search_term = st.text_input(
+        "Type card name to search:", 
+        placeholder="Type at least 3 letters... e.g., Fyendal",
+        key="search_term_value"
+    )
+
+with col2:
+    if st.button("Clear ✖", on_click=clear_search, use_container_width=True):
+        st.rerun()
+
+# NEW: We reserve an empty UI container slot here. 
+# This lets us inject the history layout block *after* the search history state updates down below!
+history_container = st.container()
+
+selected_card_name = None
+
+# Step 2: Dynamically inject the dropdown selection ONLY when criteria met
+if len(search_term) >= 3:
+    filtered_options = [
+        card for card in unique_card_names 
+        if search_term.lower() in card.lower()
+    ]
+    
+    if filtered_options:
+        default_index = 0
+        if search_term in filtered_options:
+            default_index = filtered_options.index(search_term)
+            
+        selected_card_name = st.selectbox(
+            f"Select exact card matching '{search_term}':",
+            options=filtered_options,
+            index=default_index
+        )
+    else:
+        st.warning("No cards found matching that search term. Check your spelling!")
+else:
+    st.info("💡 Please type at least 3 characters to display matching card options.")
+
+# --- STORE FILTER HIDDEN FOR NOW ---
+selected_stores = unique_stores
+
+# Step 3: Action search button execution
+if st.button("Search Live Prices", type="primary"):
+    if not selected_card_name:
+        st.error("Please filter and select a valid card from the dropdown first.")
+    elif not selected_stores:
         st.warning("Please select at least one store to perform a search.")
     else:
         st.subheader(f"Results for: {selected_card_name}")
+        
+        # --- UPDATE SEARCH HISTORY IMMEDIATELY ---
+        updated_history = [item for item in st.session_state.search_history if item != selected_card_name]
+        updated_history.insert(0, selected_card_name)
+        st.session_state.search_history = updated_history[:3]
         
         # 1. Retrieve all unique printings_identifiers for the chosen card name
         matched_identifiers = df_printings[df_printings["name"] == selected_card_name]["printings_identifier"].dropna().unique()
@@ -130,7 +182,6 @@ if st.button("Search", type="primary") and selected_card_name:
             # 2. Case-insensitive string matching across the single Card Number column
             str_identifiers = [str(x).strip().lower() for x in matched_identifiers]
             
-            # Use lower-case matching to safeguard against "mst095" vs "MST095" discrepancies
             matching_rows = df_master[
                 (df_master["Card Number"].astype(str).str.strip().str.lower().isin(str_identifiers)) & 
                 (df_master["Store Name"].isin(selected_stores))
@@ -154,7 +205,6 @@ if st.button("Search", type="primary") and selected_card_name:
                                 "Product": title_unmodified,
                                 "Condition": v["Condition"],
                                 "Price": v["Price"],
-                                "Availability": "Available",
                                 "URL": url
                             })
                     progress_bar.progress((idx + 1) / total_rows)
@@ -187,7 +237,6 @@ if st.button("Search", type="primary") and selected_card_name:
                     td { padding: 10px; border-bottom: 1px solid var(--border-color); color: var(--text-color); }
                     a { color: var(--link-color); text-decoration: none; font-weight: 500; }
                     a:hover { text-decoration: underline; }
-                    .avail-green { color: #28a745; font-weight: bold; }
                 </style>
                 <table>
                     <thead>
@@ -196,7 +245,6 @@ if st.button("Search", type="primary") and selected_card_name:
                             <th>Product Title</th>
                             <th>Condition</th>
                             <th>Price</th>
-                            <th>Availability</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -208,18 +256,32 @@ if st.button("Search", type="primary") and selected_card_name:
                             <td><a href="{item['URL']}" target="_blank">{item['Product']}</a></td>
                             <td style="font-weight: 500;">{item['Condition']}</td>
                             <td>{item['Price']}</td>
-                            <td><span class="avail-green">{item['Availability']}</span></td>
                         </tr>
                     """
                 table_html += "</tbody></table>"
                 
                 calculated_height = max(180, (len(results) * 42) + 60)
                 
-                # FIXED: URL encode the string payload to ensure CSS hex symbols (#) don't cut off data rendering inside iframes
                 safe_html = urllib.parse.quote(table_html)
                 st.iframe(f"data:text/html;charset=utf-8,{safe_html}", height=calculated_height)
             else:
-                st.warning("❌ This card printing is currently out of stock across the selected stores.")
-            
-elif not selected_card_name:
-    st.info("Please select a card from the dropdown to begin.")
+                st.warning("❌ This card printing is currently out of stock across the tracked stores.")
+
+# ----------------------------------------------------
+# DYNAMIC HISTORY RENDERING
+# ----------------------------------------------------
+# By rendering the history content inside our pre-allocated container block, 
+# it will accurately include the search you *just* executed instantly.
+if st.session_state.search_history:
+    with history_container:
+        st.write("🕒 **Recent Searches:**")
+        history_cols = st.columns(len(st.session_state.search_history))
+        for i, hist_card in enumerate(st.session_state.search_history):
+            with history_cols[i]:
+                st.button(
+                    f"🔗 {hist_card}", 
+                    key=f"hist_{i}", 
+                    on_click=load_historical_card, 
+                    args=(hist_card,), 
+                    use_container_width=True
+                )
